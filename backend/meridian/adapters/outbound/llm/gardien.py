@@ -475,6 +475,97 @@ async def veiller_source(conn, db, jumeau_id, source, lecteur=None):
             "situation": situation["id"]}
 
 
+# --- Registre des sweeps cognitifs (convergence §3.5) ---
+#
+# Chaque sweep est {nom, ordre, flag, fn} : ordonné par position dans _SWEEPS,
+# isolé par try/except (fail-soft, rejoué à la passe suivante), activable par
+# feature flag. ``fn(conn, tenant_id, ctx)`` rend un résumé journalisable ou
+# ``None`` ; ``ctx`` véhicule la dépendance explicite 4→5 (``poids_signatures``).
+
+
+def _sweep_signatures(conn, tenant, ctx):
+    # C5 : le taux de confirmation mesuré par signature module la confiance des
+    # NEED — la mesure écrit un Learning par signature quand les stats bougent.
+    mesures = signatures_besoins.mesurer(conn, tenant)
+    ctx["poids_signatures"] = mesures["poids"]
+    totaux = mesures["learnings"]["totaux"]
+    return totaux if totaux["ecrits"] or totaux["erreurs"] else None
+
+
+def _sweep_besoins(conn, tenant, ctx):
+    # B7 : détecteurs déterministes de besoins (NEED/UNKNOWN/CONJECTURE).
+    rapport = detecteurs_besoins.detecter(
+        conn, tenant, poids=ctx.get("poids_signatures"))
+    totaux = rapport["totaux"]
+    return totaux if totaux["crees"] or totaux["erreurs"] else None
+
+
+def _sweep_paris(conn, tenant, ctx):
+    # C6 : les paris datés — l'intention de vérification juge le NEED à échéance.
+    totaux = resolution_besoins.verifier_paris(conn, tenant)["totaux"]
+    return (totaux if totaux["evalues"] or totaux["paris_ouverts"]
+            or totaux["erreurs"] else None)
+
+
+def _sweep_calibration(conn, tenant, ctx):
+    # C4 : les prédictions datées échues sont résolues contre les outcomes réels.
+    totaux = calibration.resoudre(conn, tenant)["totaux"]
+    return totaux if totaux["resolues"] or totaux["erreurs"] else None
+
+
+def _sweep_decroissance(conn, tenant, ctx):
+    # D2 : érosion de confiance et réfutation active — les beliefs érodés
+    # remontent en attention ; un claim ACCEPTED réfuté passe CONTESTED.
+    totaux = decroissance_confiance.evaluer(conn, tenant)["totaux"]
+    return (totaux if totaux["erodes"] or totaux["a_revalider"]
+            or totaux["contestes"] or totaux["erreurs"] else None)
+
+
+def _sweep_revue(conn, tenant, ctx):
+    # D3 : revue graduée — AUTO_VISIBLE s'accepte (révocable J+30, audité),
+    # ATTENTION et BLOQUANT attendent l'humain.
+    rapport = revue_graduee.appliquer(conn, tenant)
+    return rapport if any(rapport.values()) else None
+
+
+def _sweep_opportunites(conn, tenant, ctx):
+    # B2 : détecteur déterministe d'opportunités et de risques.
+    totaux = detecteur_opportunites.detecter(conn, tenant)["totaux"]
+    return totaux if totaux["crees"] or totaux["erreurs"] else None
+
+
+_FLAG_REVUE_GRADUEE = "JUMEAU_REVUE_GRADUEE"
+
+SWEEPS = (
+    {"nom": "signatures", "flag": None, "fn": _sweep_signatures},
+    {"nom": "besoins", "flag": None, "fn": _sweep_besoins},
+    {"nom": "paris", "flag": None, "fn": _sweep_paris},
+    {"nom": "calibration", "flag": None, "fn": _sweep_calibration},
+    {"nom": "decroissance", "flag": None, "fn": _sweep_decroissance},
+    {"nom": "revue", "flag": _FLAG_REVUE_GRADUEE, "fn": _sweep_revue},
+    {"nom": "opportunites", "flag": None, "fn": _sweep_opportunites},
+)
+
+
+def _executer_sweeps(conn, tenant_id, jumeau_id):
+    """Joue le registre des sweeps dans l'ordre ; un échec n'en bloque aucun autre."""
+    ctx: dict = {"poids_signatures": None}
+    for entree in SWEEPS:
+        flag = entree["flag"]
+        if flag and os.environ.get(flag, "1") == "0":
+            continue
+        try:
+            resume = entree["fn"](conn, tenant_id, ctx)
+        except Exception:  # le sweep se rejoue à la passe suivante
+            journal.warning(
+                "gardien %s : sweep %s impossible", jumeau_id, entree["nom"],
+                exc_info=True)
+            continue
+        if resume:
+            journal.info("gardien %s : %s %s", jumeau_id, entree["nom"], resume)
+    return ctx
+
+
 async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     """Une passe du gardien sur tous les dépôts du jumeau (ou ceux de `chemins`).
 
@@ -532,74 +623,11 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
             journal.info("gardien %s : %s source(s) OTLP tirée(s)", jumeau_id, len(runs_otlp))
     except Exception:
         journal.warning("gardien %s : tirage OTLP impossible", jumeau_id, exc_info=True)
-    # C5 : le taux de confirmation mesuré par signature module la confiance des NEED créés —
-    # la mesure écrit un Learning par signature quand les stats bougent. Une panne de la mesure
-    # laisse des poids neutres : elle ne bloque jamais la détection.
-    poids_signatures = None
-    try:
-        mesures = signatures_besoins.mesurer(conn, jumeau["tenant_id"])
-        poids_signatures = mesures["poids"]
-        totaux_mesures = mesures["learnings"]["totaux"]
-        if totaux_mesures["ecrits"] or totaux_mesures["erreurs"]:
-            journal.info("gardien %s : signatures %s", jumeau_id, totaux_mesures)
-    except Exception:  # poids neutres : la mesure se rejoue à la passe suivante
-        journal.warning("gardien %s : mesure des signatures impossible, poids neutres",
-                        jumeau_id, exc_info=True)
-    # B7 : détecteurs déterministes de besoins (NEED/UNKNOWN/HYPOTHESIS) — avant les retours précoces,
-    # une passe sans changement Git doit quand même pouvoir laisser un besoin vivant.
-    try:
-        rapport_besoins = detecteurs_besoins.detecter(
-            conn, jumeau["tenant_id"], poids=poids_signatures)
-        if rapport_besoins["totaux"]["crees"] or rapport_besoins["totaux"]["erreurs"]:
-            journal.info("gardien %s : besoins %s", jumeau_id, rapport_besoins["totaux"])
-    except Exception:  # les détecteurs se rejouent à la passe suivante
-        journal.warning("gardien %s : détecteurs de besoins impossibles", jumeau_id, exc_info=True)
-    # C6 : les paris datés des besoins — l'intention de vérification juge le NEED à son
-    # échéance (corroboré si le signal a disparu, expiré et remonté en attention sinon).
-    try:
-        rapport_paris = resolution_besoins.verifier_paris(conn, jumeau["tenant_id"])
-        totaux_paris = rapport_paris["totaux"]
-        if totaux_paris["evalues"] or totaux_paris["paris_ouverts"] or totaux_paris["erreurs"]:
-            journal.info("gardien %s : paris %s", jumeau_id, totaux_paris)
-    except Exception:  # les paris se rejouent à la passe suivante
-        journal.warning("gardien %s : vérification des paris impossible", jumeau_id, exc_info=True)
-    # C4 : les prédictions datées échues sont résolues contre leurs outcomes réels —
-    # la calibration se nourrit à chaque passe, sans IA ni réseau.
-    try:
-        rapport_calibration = calibration.resoudre(conn, jumeau["tenant_id"])
-        totaux_calibration = rapport_calibration["totaux"]
-        if totaux_calibration["resolues"] or totaux_calibration["erreurs"]:
-            journal.info("gardien %s : calibration %s", jumeau_id, totaux_calibration)
-    except Exception:  # les prédictions échues se rejouent à la passe suivante
-        journal.warning("gardien %s : résolution des prédictions impossible", jumeau_id, exc_info=True)
-    # D2 : érosion de confiance et réfutation active — les beliefs érodés remontent en
-    # attention ; un claim ACCEPTED réfuté postérieurement passe CONTESTED, jamais en silence.
-    try:
-        rapport_decroissance = decroissance_confiance.evaluer(conn, jumeau["tenant_id"])
-        totaux_decroissance = rapport_decroissance["totaux"]
-        if (totaux_decroissance["erodes"] or totaux_decroissance["a_revalider"]
-                or totaux_decroissance["contestes"] or totaux_decroissance["erreurs"]):
-            journal.info("gardien %s : décroissance %s", jumeau_id, totaux_decroissance)
-    except Exception:  # l'évaluation se rejoue à la passe suivante
-        journal.warning("gardien %s : évaluation de la décroissance impossible", jumeau_id, exc_info=True)
-    # D3 : revue graduée — AUTO_VISIBLE s'accepte (révocable J+30, audité dans outil_audit),
-    # ATTENTION et BLOQUANT attendent l'humain. Activée par défaut (human-on-the-loop) ;
-    # JUMEAU_REVUE_GRADUEE=0 la désactive sans casser la veille.
-    if os.environ.get("JUMEAU_REVUE_GRADUEE", "1") != "0":
-        try:
-            rapport_revue = revue_graduee.appliquer(conn, jumeau["tenant_id"])
-            if any(rapport_revue.values()):
-                journal.info("gardien %s : revue graduée %s", jumeau_id, rapport_revue)
-        except Exception:  # le routage des revues se rejoue à la passe suivante
-            journal.warning("gardien %s : revue graduée impossible", jumeau_id, exc_info=True)
-    # B2 : détecteur déterministe d'opportunités (OPPORTUNITY, signature duplication) — même
-    # discipline que les besoins : rejouable à la passe suivante, jamais bloquant pour la veille.
-    try:
-        rapport_opportunites = detecteur_opportunites.detecter(conn, jumeau["tenant_id"])
-        if rapport_opportunites["totaux"]["crees"] or rapport_opportunites["totaux"]["erreurs"]:
-            journal.info("gardien %s : opportunités %s", jumeau_id, rapport_opportunites["totaux"])
-    except Exception:  # le détecteur se rejoue à la passe suivante
-        journal.warning("gardien %s : détecteur d'opportunités impossible", jumeau_id, exc_info=True)
+    # Sweeps cognitifs — registre ordonné §3.5 (signatures → besoins : la
+    # dépendance 4→5 passe par ``ctx["poids_signatures"]``) ; avant les retours
+    # précoces, une passe sans changement Git doit quand même pouvoir laisser un
+    # besoin vivant.
+    _executer_sweeps(conn, jumeau["tenant_id"], jumeau_id)
     branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
     # Sans dépôt (progiciel), pas d'ingestion de code : la version est celle des sources branchées.
     try:

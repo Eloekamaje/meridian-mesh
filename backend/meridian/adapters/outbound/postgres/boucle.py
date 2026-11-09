@@ -41,6 +41,9 @@ from meridian.domain.objets_exploitation import (
     Hypothesis as HypothesisExploitation,
     Scenario,
     Signal,
+    STATUTS_OPPORTUNITE,
+    STATUTS_RISQUE,
+    STATUTS_SCENARIO,
 )
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
@@ -50,7 +53,7 @@ __all__ = [
     "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
     "Situation", "Investigation", "Decision", "Scenario", "Initiative", "Outcome", "Learning",
-    "Unknown", "Hypothesis", "Need", "Opportunity", "Belief",
+    "Unknown", "Conjecture", "Hypothesis", "Need", "Opportunity", "Risk", "Belief",
     "est_decision_tranchee",
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
     "mesurer_outcome", "capitaliser_learning", "transiter_need",
@@ -72,7 +75,12 @@ TYPES_BOUCLE = (
     "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
     "OUTCOME", "LEARNING", "SCENARIO",
 )
-TYPES_COMPLEMENTAIRES = ("UNKNOWN", "HYPOTHESIS", "NEED", "OPPORTUNITY", "BELIEF")
+# HYPOTHESIS n'est pas un type complémentaire : depuis le renommage CONJECTURE
+# (convergence §2.1), il n'appartient qu'au workflow d'exploitation, écrit par
+# ``enregistrer_objets`` — jamais par ``enregistrer_boucle``. RISK est ouvert à
+# l'écriture boucle depuis la phase 2 (convergence §2.2) : le détecteur y stocke
+# ses risques au lieu de les déguiser en OPPORTUNITY.
+TYPES_COMPLEMENTAIRES = ("UNKNOWN", "CONJECTURE", "NEED", "OPPORTUNITY", "RISK", "BELIEF")
 TRANSITIONS_NEED = modele.TRANSITIONS_NEED
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
@@ -92,9 +100,10 @@ _MODE_DEFAUT = {
     "OUTCOME": "OBSERVED",
     "LEARNING": "INFERRED",
     "UNKNOWN": "PROPOSED",
-    "HYPOTHESIS": "PROPOSED",
+    "CONJECTURE": "PROPOSED",
     "NEED": "PROPOSED",
     "OPPORTUNITY": "INFERRED",
+    "RISK": "INFERRED",
     "BELIEF": "INFERRED",
 }
 _CHAMPS_TABLE = frozenset({
@@ -108,9 +117,17 @@ _MAX_HISTORIQUE = 50
 # fraîchement construit ne doit pas les effacer avec ses valeurs par défaut.
 _CHAMPS_INVERSES_LIES = frozenset({
     "signal_ids", "expression_id", "opportunity_ids", "risk_ids",
-    "hypothesis_ids", "expert_ids", "scenario_ids",
+    "hypothesis_ids", "conjecture_ids", "expert_ids", "scenario_ids",
     "scenario_id", "initiative_id", "outcome_ids", "scenarios_rejetes",
 })
+
+# Drapeaux transitoires : ils décrivent l'état courant posé par leur producteur
+# (``attention`` est le canal canonique du fil d'attention — convergence §5.5).
+# Une réécriture canonique qui ne les repose pas les efface : le merge de
+# ``_persister`` ne doit pas faire survivre un signalement périmé à un belief
+# revalidé ou à une situation requalifiée. ``fusionner_donnees`` — le chemin des
+# producteurs — écrit hors ``_persister`` et n'est pas concerné.
+_CHAMPS_TRANSIENTS = frozenset({"attention"})
 
 
 class BoucleInvalide(modele.ModeleInvalide):
@@ -499,8 +516,8 @@ class Unknown(modele.Unknown, _LiensBoucle):
 
 
 @dataclass
-class Hypothesis(modele.Hypothesis, _LiensBoucle):
-    """Hypothèse rivale persistée ; TESTEE ou RETENUE exige au moins une rivale."""
+class Conjecture(modele.Conjecture, _LiensBoucle):
+    """Conjecture rivale persistée ; TESTEE ou RETENUE exige au moins une rivale."""
 
     mode: str = "PROPOSED"
     titre: str = ""
@@ -516,6 +533,13 @@ class Hypothesis(modele.Hypothesis, _LiensBoucle):
         super().__post_init__()
 
 
+# Compatibilité arrière : ``boucle.Hypothesis`` désignait la conjecture
+# épistémique avant le renommage. HYPOTHESIS est désormais réservé au workflow
+# (``domain.objets_exploitation.Hypothesis``, importé ci-dessus en
+# ``HypothesisExploitation``).
+Hypothesis = Conjecture
+
+
 @dataclass
 class Need(modele.Need, _LiensBoucle):
     """Besoin ouvert persisté ; `refutable_par` reste obligatoire, comme dans le modèle."""
@@ -525,7 +549,7 @@ class Need(modele.Need, _LiensBoucle):
     CHAMPS_LIENS = (
         "situation_id", "unknown_id", "opportunity_id", "risk_id", "intention_id",
     )
-    CHAMPS_LIENS_MULTIPLES = ("hypothese_ids", "twin_ids", "claim_ids")
+    CHAMPS_LIENS_MULTIPLES = ("conjecture_ids", "twin_ids", "claim_ids")
 
     def __post_init__(self) -> None:
         self.resume = _texte(self.resume) or _texte(self.ecart)
@@ -541,8 +565,6 @@ class Opportunity(modele.Opportunity, _LiensBoucle):
 
     mode: str = "INFERRED"
     resume: str = ""
-    signature: str = ""
-    claim_ids: list[str] = field(default_factory=list)
     CHAMPS_LIENS = ("situation_id", "investigation_id")
     CHAMPS_LIENS_MULTIPLES = ("twin_ids", "claim_ids")
 
@@ -554,8 +576,26 @@ class Opportunity(modele.Opportunity, _LiensBoucle):
         super().__post_init__()
         if not self.titre:
             self.titre = _texte(self.description) or "Opportunité"
-        self.signature = _texte(self.signature)
-        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
+
+
+@dataclass
+class Risk(modele.Risk, _LiensBoucle):
+    """Risque persisté par le chemin boucle : comme l'opportunité, ses preuves
+    sont les claims cités par le détecteur (`claim_ids`)."""
+
+    mode: str = "INFERRED"
+    resume: str = ""
+    CHAMPS_LIENS = ("situation_id", "investigation_id")
+    CHAMPS_LIENS_MULTIPLES = ("twin_ids", "claim_ids")
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.description)
+        if not self.description:
+            self.description = self.resume
+        _dater(self)
+        super().__post_init__()
+        if not self.titre:
+            self.titre = _texte(self.description) or "Risque"
 
 
 @dataclass
@@ -580,7 +620,29 @@ class Belief(modele.Belief, _LiensBoucle):
         self.revalide_par = _texte_ou_none(self.revalide_par)
 
 
+# Types instantiables par le chemin générique ``POST /objets`` : les types
+# épistémiques et SITUATION. INVESTIGATION, DECISION, INITIATIVE, OUTCOME,
+# LEARNING et SCENARIO ne naissent que par les routes typées de la boucle ou les
+# producteurs internes (convergence §3.1) — les garder ici permettrait une
+# DECISION déjà tranchée ou un OUTCOME sans mesure, hors gouvernance. OPPORTUNITY,
+# RISK et BELIEF restent écrits par leurs producteurs via ``enregistrer_boucle``.
 _CLASSES = {
+    "SITUATION": Situation,
+    "UNKNOWN": Unknown,
+    "CONJECTURE": Conjecture,
+    "NEED": Need,
+}
+
+# Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
+# canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
+# l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
+# ``HYPOTHESIS`` y reste mappé sur la classe workflow (convergence §2.1 : la
+# CONJECTURE épistémique est relue en ``Conjecture``, les deux cohabitent).
+# Ordre épinglé : ``TYPES_LECTURE`` est la source unique de validation des types
+# lus — la séquence historique (boucle d'abord, complémentaires ensuite, lecture
+# exploitation en dernier) est conservée pour rester stable en dépit de la
+# restriction de ``_CLASSES``.
+_CLASSES_LECTURE = {
     "SITUATION": Situation,
     "INVESTIGATION": Investigation,
     "DECISION": Decision,
@@ -588,25 +650,17 @@ _CLASSES = {
     "OUTCOME": Outcome,
     "LEARNING": Learning,
     "UNKNOWN": Unknown,
-    "HYPOTHESIS": Hypothesis,
+    "CONJECTURE": Conjecture,
     "NEED": Need,
-    "OPPORTUNITY": Opportunity,
+    "OPPORTUNITY": modele.Opportunity,
+    "RISK": modele.Risk,
     "BELIEF": Belief,
     "SCENARIO": Scenario,
-}
-
-# Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
-# canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
-# l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
-_CLASSES_LECTURE = {
-    **_CLASSES,
     "SIGNAL": Signal,
     "EXPRESSION": Expression,
     "HYPOTHESIS": HypothesisExploitation,
     "EXPERT": Expert,
     "EXPERT_CONTRIBUTION": ExpertContribution,
-    "OPPORTUNITY": modele.Opportunity,
-    "RISK": modele.Risk,
 }
 TYPES_LECTURE = tuple(_CLASSES_LECTURE)
 
@@ -1000,45 +1054,24 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
             champ, type_source = attendu
             _resoudre_source(conn, tenant, par_id, _valeur(objet, champ), champ, type_source)
         if type_objet == "SCENARIO":
-            investigation_id = _texte_ou_none(_valeur(objet, "investigation_id"))
-            decision_id = _texte_ou_none(_valeur(objet, "decision_id"))
-            if not investigation_id and not decision_id:
-                raise BoucleInvalide("un scénario exige investigation_id ou decision_id")
-            if investigation_id:
-                _resoudre_source(
-                    conn, tenant, par_id, investigation_id,
-                    "investigation_id", "INVESTIGATION")
-            decision_investigation = None
-            if decision_id:
-                decision = _resoudre_source(
-                    conn, tenant, par_id, decision_id, "decision_id", "DECISION")
-                decision_investigation = _lien_ou_alias(
-                    decision, "investigation_id", "investigation_ref")
-                if (
-                    investigation_id and decision_investigation
-                    and decision_investigation != investigation_id
-                ):
-                    raise BoucleInvalide(
-                        f"la décision {decision_id!r} appartient à l'investigation "
-                        f"{decision_investigation!r}, pas à {investigation_id!r}"
-                    )
-            investigation_reference = investigation_id or decision_investigation
-            for hypothesis_id in _liste_ids(
-                _valeur(objet, "hypothesis_ids"), "hypothesis_ids"
-            ):
-                hypothesis = _resoudre_source(
-                    conn, tenant, par_id, hypothesis_id,
-                    "hypothesis_ids", "HYPOTHESIS")
-                hypothesis_investigation = _texte_ou_none(
-                    _valeur(hypothesis, "investigation_id"))
-                if (
-                    investigation_reference and hypothesis_investigation
-                    and hypothesis_investigation != investigation_reference
-                ):
-                    raise BoucleInvalide(
-                        f"l'hypothèse {hypothesis_id!r} appartient à l'investigation "
-                        f"{hypothesis_investigation!r}, pas à {investigation_reference!r}"
-                    )
+            # Vocabulaire de statut unique : un statut hors STATUTS_SCENARIO
+            # gèle l'objet pour le moteur de transitions — autant le refuser à
+            # l'écriture que de le découvrir à la transition.
+            statut_scenario = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_scenario and statut_scenario not in STATUTS_SCENARIO:
+                raise BoucleInvalide(
+                    f"statut de SCENARIO inconnu : {statut_scenario!r}"
+                )
+            # Registre de validation unique (convergence §7 — fusion des
+            # régimes) : le scénario obéit au même validateur que le chemin
+            # d'exploitation — source investigation/décision, investigation de
+            # la décision cohérente, hypothèses rattachées à la bonne
+            # investigation. ``par_id`` préserve les liens intra-lot.
+            try:
+                objets_exploitation._valider_pour_persistance(
+                    conn, tenant, [objet], par_id=par_id)
+            except objets_exploitation.ObjetsExploitationInvalide as exc:
+                raise BoucleInvalide(str(exc)) from exc
         if type_objet == "DECISION" and est_decision_tranchee(objet):
             for champ in ("acteur", "choix", "decide_le"):
                 if not _valeur(objet, champ):
@@ -1078,14 +1111,33 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
                 _valeur(objet, "porteur")
             ):
                 raise BoucleInvalide(f"un NEED {statut_need} exige un porteur")
-        if type_objet == "HYPOTHESIS":
-            statut_hypothese = _normaliser_statut(_valeur(objet, "statut"))
-            if statut_hypothese in {"TESTEE", "RETENUE"} and not _liste_ids(
+        if type_objet == "CONJECTURE":
+            statut_conjecture = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_conjecture in {"TESTEE", "RETENUE"} and not _liste_ids(
                 _valeur(objet, "rival_ids"), "rival_ids"
             ):
                 raise BoucleInvalide(
-                    f"une HYPOTHESIS {statut_hypothese} exige au moins une rivale"
+                    f"une CONJECTURE {statut_conjecture} exige au moins une rivale"
                 )
+        if type_objet in {"OPPORTUNITY", "RISK"}:
+            # Vocabulaire de statut unique (convergence §2.2) : un statut hors
+            # taxonomie gèle l'objet pour le moteur de transitions — autant le
+            # refuser à l'écriture que de le découvrir à la transition.
+            statuts_emergence = (
+                STATUTS_OPPORTUNITE if type_objet == "OPPORTUNITY" else STATUTS_RISQUE
+            )
+            statut_emergence = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_emergence and statut_emergence not in statuts_emergence:
+                raise BoucleInvalide(
+                    f"statut de {type_objet} inconnu : {statut_emergence!r}"
+                )
+            # Registre de validation unique (convergence §7 phase 3) : les types
+            # partagés obéissent au même validateur que le chemin B — trace
+            # humaine ou détection prouvée, résolution des liens typés.
+            try:
+                objets_exploitation._valider_pour_persistance(conn, tenant, [objet])
+            except objets_exploitation.ObjetsExploitationInvalide as exc:
+                raise BoucleInvalide(str(exc)) from exc
         if type_objet == "BELIEF":
             statut_belief = _normaliser_statut(_valeur(objet, "statut"))
             if statut_belief and statut_belief not in modele.STATUTS_BELIEF:
@@ -1201,6 +1253,8 @@ def _persister(
                 if cle == "scenario_id" and _texte_ou_none(existantes.get(cle)):
                     continue
                 donnees[cle] = valeur
+            for cle in _CHAMPS_TRANSIENTS - set(nouvelles):
+                donnees.pop(cle, None)
             if historique:
                 versions = list(existantes.get("_historique") or [])
                 versions.append(_entree_historique(ancien))
@@ -1363,7 +1417,14 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
         situations = _liste_ids(_valeur(ligne, "situation_ids"), "situation_ids")
         return situations[0] if len(situations) == 1 else None
     if type_objet == "HYPOTHESIS":
-        return _texte_ou_none(_valeur(ligne, "investigation_id"))
+        # Workflow : le parent est l'Investigation. Le repli situation_id/need_id
+        # couvre les lignes épistémiques écrites avant la migration 0006 (depuis
+        # renommées CONJECTURE) : leur chaîne causale reste résoluble.
+        return (
+            _texte_ou_none(_valeur(ligne, "investigation_id"))
+            or _texte_ou_none(_valeur(ligne, "situation_id"))
+            or _texte_ou_none(_valeur(ligne, "need_id"))
+        )
     if type_objet == "EXPERT":
         # Le registre n'a pas de parent : la chaîne se réduit à l'Expert lui-même.
         return None
@@ -1398,7 +1459,7 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
             _texte_ou_none(_valeur(ligne, "situation_id"))
             or _texte_ou_none(_valeur(ligne, "unknown_id"))
         )
-    if type_objet == "HYPOTHESIS":
+    if type_objet == "CONJECTURE":
         return (
             _texte_ou_none(_valeur(ligne, "situation_id"))
             or _texte_ou_none(_valeur(ligne, "need_id"))

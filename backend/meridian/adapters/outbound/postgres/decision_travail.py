@@ -11,8 +11,8 @@ défaut de l'identifiant du case lui-même. Une `INVESTIGATION` canonique liée 
 référencée par le case, portant l'épisode, ou reliée à l'une des `situations`
 du case — est chaînée via les fonctions de `boucle` ; une `SITUATION` seule
 ouvre d'abord l'investigation de l'épisode ; sans aucun parent canonique, la
-décision est persistée seule, son `investigation_id` restant à renseigner quand
-l'investigation de l'épisode existera (corrélation par `episode_id`).
+situation de l'épisode est créée d'abord — convergence §3.2 : une DECISION
+orpheline est un trou de causalité, jamais une souplesse.
 
 Ce module ne touche ni Mongo ni le réseau : l'appelant reste responsable du
 fail-soft — une erreur ici ne doit jamais faire échouer la décision Travail.
@@ -172,10 +172,10 @@ def enregistrer_decision_travail(conn: Any, tenant_id: Any, case: Mapping, decis
     """Persiste l'objet canonique `DECISION` correspondant à une décision Travail ; rend la ligne écrite.
 
     `decision` est le dictionnaire poussé dans `decisions` du case (`texte`, `type`, `quand`,
-    `par`). Avec une investigation canonique liée, la chaîne passe par `proposer_decision` puis
-    `trancher_decision` et `enregistrer_boucle` ; une situation seule fait d'abord ouvrir
-    l'investigation de l'épisode ; sans parent, la décision tranchée est écrite seule —
-    `enregistrer_boucle` exigeant `investigation_id`, le dépôt d'objets la persiste directement.
+    `par`). La chaîne passe toujours par `proposer_decision` puis `trancher_decision` et
+    `enregistrer_boucle` ; une situation seule fait d'abord ouvrir l'investigation de
+    l'épisode ; sans aucun parent, la situation de l'épisode est créée d'abord — la
+    DECISION n'est jamais orpheline (convergence §3.2).
     """
     if not isinstance(case, Mapping):
         raise boucle.BoucleInvalide("case attendu")
@@ -193,7 +193,17 @@ def enregistrer_decision_travail(conn: Any, tenant_id: Any, case: Mapping, decis
     titre = texte if len(texte) <= 140 else texte[:137].rstrip() + "..."
 
     objets: list[Any] = []
-    if investigation is None and situation is not None:
+    if situation is None:
+        # Aucun parent canonique : la situation de l'épisode est créée d'abord
+        # pour que la chaîne SITUATION → INVESTIGATION → DECISION reste entière
+        # (convergence §3.2 — interdiction de la DECISION orpheline).
+        situation = boucle.Situation(
+            id=boucle._nouvel_id("situation"), tenant_id=tenant,
+            titre=_texte(case.get("titre")) or f"Épisode {episode_id}",
+            resume=_texte(case.get("objectif")),
+        )
+        objets.append(situation)
+    if investigation is None:
         investigation = boucle.ouvrir_investigation(
             situation,
             tenant_id=tenant,
@@ -203,44 +213,16 @@ def enregistrer_decision_travail(conn: Any, tenant_id: Any, case: Mapping, decis
         )
         objets.append(investigation)
 
-    if investigation is not None:
-        proposition = boucle.proposer_decision(
-            investigation,
-            options,
-            titre=titre,
-            resume=texte,
-            tenant_id=tenant,
-            episode_id=episode_id,
-            travail_id=travail_id,
-        )
-        tranchee = boucle.trancher_decision(
-            proposition, acteur=acteur, choix=texte, decide_le=quand)
-        objets.append(tranchee)
-        return boucle.enregistrer_boucle(conn, tenant, objets)[-1]
-
-    # Aucun parent canonique : la décision est persistée seule — `enregistrer_boucle` refuse
-    # une DECISION sans `investigation_id`. Même contenu que l'objet proposé puis tranché :
-    # statut DECIDED, acteur et choix humains, mode DECLARED (jamais auto-confirmé).
-    payload = {
-        "id": boucle._nouvel_id("decision"),
-        "tenant_id": tenant,
-        "famille": "decision",
-        "type": "DECISION",
-        "mode": "DECLARED",
-        "titre": titre,
-        "observe_le": quand,
-        "donnees": {
-            "statut": boucle.STATUT_DECISION_TRANCHEE,
-            "acteur": acteur,
-            "choix": texte,
-            "decide_le": quand or boucle._instant(),
-            "options": options,
-            "criteres": [],
-            "incertitudes": [],
-            "resume": texte,
-            "episode_id": episode_id,
-            "travail_id": travail_id,
-            "origine": "travail",
-        },
-    }
-    return entreprise_depot.enregistrer_objet(conn, tenant, payload)
+    proposition = boucle.proposer_decision(
+        investigation,
+        options,
+        titre=titre,
+        resume=texte,
+        tenant_id=tenant,
+        episode_id=episode_id,
+        travail_id=travail_id,
+    )
+    tranchee = boucle.trancher_decision(
+        proposition, acteur=acteur, choix=texte, decide_le=quand)
+    objets.append(tranchee)
+    return boucle.enregistrer_boucle(conn, tenant, objets)[-1]

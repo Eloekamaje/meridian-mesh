@@ -937,15 +937,23 @@ import inspect as _inspect
 from pydantic import BaseModel as _BaseModel, Field as _Field
 
 _PREFIXES_ID = {
-    "SITUATION": "sit-", "INVESTIGATION": "inv-", "DECISION": "dec-",
-    "INITIATIVE": "ini-", "OUTCOME": "out-", "LEARNING": "ler-",
-    "UNKNOWN": "unk-", "HYPOTHESIS": "hyp-", "NEED": "need-",
+    "SITUATION": "sit-", "UNKNOWN": "unk-", "CONJECTURE": "conj-", "NEED": "need-",
 }
-_TYPES_CREATION = (
-    "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
-    "UNKNOWN", "HYPOTHESIS", "NEED",
-)
+# Types créables par le chemin générique : les types épistémiques et SITUATION
+# (convergence §3.1). CONJECTURE remplace HYPOTHESIS (§2.1) — une HYPOTHESIS
+# workflow ne naît que par ``POST /investigations/{iid}/hypotheses`` — et
+# INVESTIGATION, DECISION, INITIATIVE, OUTCOME, LEARNING, SCENARIO restent
+# réservés aux routes typées, seule voie qui impose le statut serveur, le verrou
+# FOR UPDATE et la trace de transition.
+_TYPES_CREATION = ("SITUATION", "UNKNOWN", "CONJECTURE", "NEED")
 _MODES_CREATION = {"SITUATION": "OBSERVED"}
+# Champs fixés par le serveur à la création : un client ne choisit ni
+# l'identifiant, ni le statut, ni le mode, ni les dates de validité — même refus
+# 422 que sur les routes typées (règles Bearer).
+_CHAMPS_SERVEUR_CREATION = frozenset({
+    "id", "tenant_id", "type", "famille", "mode", "statut", "version",
+    "cree_le", "observe_le", "valide_depuis", "valide_jusqua", "maj_le",
+})
 
 _ACTIONS_TRANSITION = {
     "ouvrir_investigation": ("SITUATION", boucle.ouvrir_investigation),
@@ -976,17 +984,25 @@ async def creer_objet(
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Crée un objet canonique de la boucle (Situation, Investigation, Decision, Initiative)
-    ou un objet complémentaire (Unknown, Hypothesis, Need)."""
+    """Crée un objet épistémique (Unknown, Conjecture, Need) ou une Situation.
+
+    Identifiant, statut et mode sont fixés par le serveur : un ``mode`` client ou
+    une clé gouvernée dans ``donnees`` (``statut``, ``id``, ``version``…) est
+    refusé en 422, comme sur les routes typées.
+    """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     type_objet = str(payload.type or "").strip().upper()
     if type_objet not in _TYPES_CREATION:
         raise HTTPException(
             422, f"type non créable : {type_objet!r} (créables : {list(_TYPES_CREATION)})")
-    mode = (payload.mode or _MODES_CREATION.get(type_objet, "PROPOSED")).upper()
-    if mode not in _MODES:
-        raise HTTPException(422, f"mode inconnu : {mode!r}")
+    if payload.mode is not None:
+        raise HTTPException(422, "mode fixé par le serveur")
+    interdites = _CHAMPS_SERVEUR_CREATION & set(payload.donnees or {})
+    if interdites:
+        raise HTTPException(
+            422, f"champs serveur interdits dans donnees : {sorted(interdites)}")
+    mode = _MODES_CREATION.get(type_objet, "PROPOSED")
     dsn = _dsn()
 
     def ecrire():
@@ -1037,11 +1053,13 @@ async def transition_objet(
             return _transiter(conn)
 
     def _transiter(conn):
-        source = boucle.lire_boucle(conn, tenant, objet_id, as_dict=True)
-        if source is None:
-            raise HTTPException(404, "Objet introuvable")
-        nouvel = fonction(source, tenant_id=tenant, **dict(payload.donnees))
-        return boucle.enregistrer_boucle(conn, tenant, nouvel)
+        with conn.transaction():
+            source = boucle.lire_boucle(
+                conn, tenant, objet_id, as_dict=True, for_update=True)
+            if source is None:
+                raise HTTPException(404, "Objet introuvable")
+            nouvel = fonction(source, tenant_id=tenant, **dict(payload.donnees))
+            return boucle.enregistrer_boucle(conn, tenant, nouvel)
 
     resultat = await _dans_le_thread(ecrire)
     return _assainir(resultat)

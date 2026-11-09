@@ -55,7 +55,7 @@ _LISTES_FUSIONNEES = frozenset({
     "outcome_ids", "outcome_attendu_ids", "investigation_ids", "twin_ids", "signal_ids",
     "claim_ids", "opportunite_ids", "risk_ids", "preuves", "conditions_applicabilite",
     "reutilisations", "source_ids", "scenarios_rejetes", "approbateur_ids", "expert_ids",
-    "hypothesis_ids", "scenario_ids", "controles", "inconnues", "modes",
+    "hypothesis_ids", "conjecture_ids", "scenario_ids", "controles", "inconnues", "modes",
 })
 
 

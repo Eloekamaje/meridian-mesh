@@ -148,14 +148,14 @@ def test_contournement_produit_rivales_et_need():
                        needs=[], unknowns=[], creer_intention=None)
 
     assert rapport["totaux"] == {"crees": 1, "ignores": 0, "erreurs": 0}
-    hypotheses = depot.par_type("HYPOTHESIS")
+    hypotheses = depot.par_type("CONJECTURE")
     [need] = depot.par_type("NEED")
     assert len(hypotheses) >= 2
     assert {h["donnees"]["statut"] for h in hypotheses} == {"EMISE"}
     assert all(len(h["donnees"]["rival_ids"]) >= 1 for h in hypotheses)
     assert need["donnees"]["signature"] == "contournement"
     assert need["donnees"]["refutable_par"].strip()
-    assert set(need["donnees"]["hypothese_ids"]) == {h["id"] for h in hypotheses}
+    assert set(need["donnees"]["conjecture_ids"]) == {h["id"] for h in hypotheses}
     assert need["donnees"]["sujet_detection"] == "app-cartes|CONSOMME"
 
 
@@ -318,7 +318,7 @@ def test_persistance_reelle_contournement_et_recurrence(conn):
     assert {"contournement", "recurrence"} <= signatures
 
     relu = boucle.lire_boucle(conn, TENANT, rapport["crees"][0]["id"])
-    assert relu["type"] in {"NEED", "UNKNOWN", "HYPOTHESIS"}
+    assert relu["type"] in {"NEED", "UNKNOWN", "CONJECTURE"}
 
     second = detecteurs_besoins.detecter(conn, TENANT, maintenant=MAINTENANT)
     assert second["crees"] == []

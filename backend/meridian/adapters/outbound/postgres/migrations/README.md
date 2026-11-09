@@ -30,6 +30,24 @@ Révisions :
 - `0005_objets_exploitation_hypothesis_index` — index non partiel du filtre `hypothesis_id` de
   `lister_objets_exploitation`, utilisé par `GET /api/boucle/contributions` et par la chaîne
   `INVESTIGATION → HYPOTHESIS → EXPERT_CONTRIBUTION` (C5e).
+- `0006_conjecture` — renommage du type épistémique `HYPOTHESIS` en `CONJECTURE` (convergence
+  dev/cognition §2.1) : les lignes dont `donnees->>'statut'` appartient au vocabulaire épistémique
+  (`EMISE`/`TESTEE`/`RETENUE`/`REFUTEE`) ou qui portent `rival_ids`/`preuve_discriminante`/`need_id`
+  changent de type ; les `HYPOTHESIS` workflow (statuts `OPEN`…) ne bougent pas. Renomme aussi la clé
+  `donnees.hypothese_ids` des NEED en `conjecture_ids`.
+- `0007_detection_detected_risk` — unification OPPORTUNITY (convergence §2.2) : les OPPORTUNITY de
+  détecteur (`signature` présente) passent de `PROPOSED` à `DETECTED`, et les lignes des signatures
+  `concentration_risque`/`dette_vs_usage` deviennent des `RISK` avec `type_risque` canonique
+  (`CONTINUITE`/`TECHNIQUE`), `type_opportunite` consolidé, `severite` `ELEVEE`→`HAUTE`.
+- `0008_decision_parent` — interdiction de la DECISION orpheline (convergence §3.2) : les DECISION
+  sans `investigation_id` sont rattachées à l'INVESTIGATION de leur `episode_id` quand elle est
+  unique, sinon marquées `donnees.parent_manquant` (réparables uniquement en posant le lien).
+- `0009_attention_index` — index partiel `(tenant_id, type) WHERE donnees ? 'attention'` pour le fil
+  d'attention unifié (convergence §5.5) : le store canonique `donnees.attention` reste lisible sans
+  parcours jsonb complet.
+- `0010_detection_index` — index partiels sur `donnees->>'signature'` et `donnees->>'sujet_detection'`
+  (phase 5) : la déduplication des détecteurs (`detecteur_opportunites`, `detecteurs_besoins`)
+  reste un balayage d'index au lieu d'un filtre jsonb complet.
 
 ## Exécution en production
 

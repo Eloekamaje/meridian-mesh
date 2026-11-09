@@ -15,7 +15,7 @@ CONTRAINTE = {
 }
 
 
-def test_rivales_s_excluent_mutuellement_et_restent_hypothesis_compatibles():
+def test_rivales_s_excluent_mutuellement_et_restent_conjecture_compatibles():
     from meridian.adapters.outbound.postgres import boucle
 
     rivales = abduction.rivaliser(CONTRAINTE)
@@ -25,10 +25,10 @@ def test_rivales_s_excluent_mutuellement_et_restent_hypothesis_compatibles():
         # Exclusion mutuelle : chaque rivale nomme toutes les autres.
         assert set(rivale["rival_ids"]) == ids - {rivale["id"]}
         assert rivale["statut"] == "EMISE"
-        assert rivale["type"] == "HYPOTHESIS"
+        assert rivale["type"] == "CONJECTURE"
         assert rivale["enonce"] and rivale["preuve_discriminante"]
         # Le dict passe tel quel au constructeur du modèle persisté.
-        boucle.Hypothesis(**rivale)
+        boucle.Conjecture(**rivale)
     # Une preuve discriminante distincte par rivale.
     assert len({r["preuve_discriminante"] for r in rivales}) == len(rivales)
     assert all("POST /legacy/pay" in r["preuve_discriminante"] for r in rivales)

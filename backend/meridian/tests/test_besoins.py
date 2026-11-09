@@ -1,4 +1,4 @@
-"""Objets B6 : NEED, UNKNOWN, HYPOTHESIS — invariants, transitions et persistance."""
+"""Objets B6 : NEED, UNKNOWN, CONJECTURE — invariants, transitions et persistance."""
 import psycopg
 import pytest
 
@@ -44,11 +44,11 @@ def unknown(identifiant="unk-1", tenant=TENANT, **champs):
     return boucle.Unknown(**valeurs)
 
 
-def hypothese(identifiant="hyp-1", tenant=TENANT, **champs):
+def conjecture(identifiant="conj-1", tenant=TENANT, **champs):
     valeurs = {**DATES, "id": identifiant, "tenant_id": tenant,
                "enonce": "Le délai vient de la revue manuelle"}
     valeurs.update(champs)
-    return boucle.Hypothesis(**valeurs)
+    return boucle.Conjecture(**valeurs)
 
 
 # --- NEED : refutable_par obligatoire ---
@@ -70,24 +70,33 @@ def test_need_statut_inconnu_rejete():
         besoin(statut="BANCO")
 
 
-# --- HYPOTHESIS : rivale exigée ---
+# --- CONJECTURE : rivale exigée ---
 
-def test_hypothesis_testee_ou_retenue_sans_rivale_rejetee():
+def test_conjecture_testee_ou_retenue_sans_rivale_rejetee():
     for statut in ("TESTEE", "RETENUE"):
         with pytest.raises(modele.ModeleInvalide):
-            hypothese(statut=statut)
+            conjecture(statut=statut)
         with pytest.raises(modele.ModeleInvalide):
-            hypothese(statut=statut, rival_ids=[])
-    emise = hypothese(statut="EMISE")
+            conjecture(statut=statut, rival_ids=[])
+    emise = conjecture(statut="EMISE")
     assert emise.statut == "EMISE" and emise.rival_ids == []
-    testee = hypothese(statut="TESTEE", rival_ids=["hyp-2"],
-                       preuve_discriminante="mesurer le délai avec revue sautée")
-    assert testee.rival_ids == ["hyp-2"]
+    testee = conjecture(statut="TESTEE", rival_ids=["conj-2"],
+                        preuve_discriminante="mesurer le délai avec revue sautée")
+    assert testee.rival_ids == ["conj-2"]
 
 
-def test_hypothesis_sans_enonce_rejetee():
+def test_conjecture_sans_enonce_rejetee():
     with pytest.raises(modele.ModeleInvalide):
-        boucle.Hypothesis(id="hyp-vide", tenant_id=TENANT, **DATES)
+        boucle.Conjecture(id="conj-vide", tenant_id=TENANT, **DATES)
+
+
+def test_need_lit_les_cles_legacy_hypothese_ids():
+    """Rétro-lecture : un NEED stocké avant le renommage porte ``hypothese_ids``."""
+    n = besoin(hypothese_ids=["conj-1", "conj-2"])
+    assert n.conjecture_ids == ["conj-1", "conj-2"]
+    assert n.hypothese_ids == []
+    fusion = besoin(conjecture_ids=["conj-1"], hypothese_ids=["conj-2"])
+    assert fusion.conjecture_ids == ["conj-1", "conj-2"]
 
 
 # --- UNKNOWN ---
@@ -160,10 +169,10 @@ def test_transiter_need_tenant_mismatch():
 # --- Persistance Postgres (dépôt + trigger) ---
 
 @besoin_pg
-def test_persistance_need_unknown_hypothesis(conn):
-    n, u, h = besoin(), unknown(), hypothese(rival_ids=["hyp-2"])
+def test_persistance_need_unknown_conjecture(conn):
+    n, u, h = besoin(), unknown(), conjecture(rival_ids=["conj-2"])
     stocke = boucle.enregistrer_boucle(conn, TENANT, [n, u, h])
-    assert {o["type"] for o in stocke} == {"NEED", "UNKNOWN", "HYPOTHESIS"}
+    assert {o["type"] for o in stocke} == {"NEED", "UNKNOWN", "CONJECTURE"}
 
     relu = boucle.lire_boucle(conn, TENANT, n.id)
     assert relu["type"] == "NEED"
@@ -177,7 +186,7 @@ def test_persistance_need_unknown_hypothesis(conn):
 
 
 @besoin_pg
-def test_enregistrer_refuse_need_et_hypothesis_invalides(conn):
+def test_enregistrer_refuse_need_et_conjecture_invalides(conn):
     brut = {"id": "need-brut", "tenant_id": TENANT, "type": "NEED",
             "famille": "emergence", "mode": "PROPOSED", "donnees": {"statut": "OUVERT"}}
     with pytest.raises(boucle.BoucleInvalide):
@@ -188,9 +197,16 @@ def test_enregistrer_refuse_need_et_hypothesis_invalides(conn):
     with pytest.raises(boucle.BoucleInvalide):
         boucle.enregistrer_boucle(conn, TENANT, brut_qualifie)
 
+    conj = {"id": "conj-brute", "tenant_id": TENANT, "type": "CONJECTURE",
+            "famille": "investigation", "mode": "PROPOSED",
+            "donnees": {"enonce": "e", "statut": "RETENUE"}}
+    with pytest.raises(boucle.BoucleInvalide):
+        boucle.enregistrer_boucle(conn, TENANT, conj)
+    # Le type HYPOTHESIS (workflow) n'est plus un type de la boucle épistémique.
     hyp = {"id": "hyp-brute", "tenant_id": TENANT, "type": "HYPOTHESIS",
            "famille": "investigation", "mode": "PROPOSED",
-           "donnees": {"enonce": "e", "statut": "RETENUE"}}
+           "donnees": {"enonce": "e", "statut": "OPEN",
+                       "investigation_id": "inv-1"}}
     with pytest.raises(boucle.BoucleInvalide):
         boucle.enregistrer_boucle(conn, TENANT, hyp)
     assert boucle.lire_boucle(conn, TENANT, "need-brut") is None
