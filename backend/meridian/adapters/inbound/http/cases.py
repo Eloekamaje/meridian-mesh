@@ -339,9 +339,11 @@ async def _persister_dossier_raisonnement(tenant, dossier, travail_id=""):
 async def _miroir_decision_canonique(case, dec):
     """B3 : la décision prise dans Travail est recopiée en objet canonique `DECISION`.
 
-    Actif sous `JUMEAU_TRAVAIL_DUAL_WRITE` (ou `JUMEAU_TRAVAIL_WRITE=postgres`).
-    Best-effort : une erreur Postgres ne doit jamais faire échouer la décision
-    Travail — la boucle canonique reste un miroir tant que le pilote legacy tourne.
+    Repli du producteur unique : l'outbox C1 porte la décision des cases liés à
+    une Situation ; ce chemin ne sert que pour les cases orphelins, qu'ADR-0008
+    exclut de l'outbox (convergence §6). Actif sous `JUMEAU_TRAVAIL_DUAL_WRITE`
+    (ou `JUMEAU_TRAVAIL_WRITE=postgres`). Best-effort : une erreur Postgres ne
+    doit jamais faire échouer la décision Travail.
     """
     if not (travail_proxy.double_ecriture_active() or travail_proxy.ecriture_postgres()):
         return
@@ -633,8 +635,16 @@ def build_cases_router(deps):
             journal_canonique.warning("pont : enqueue impossible", exc_info=True)
 
     async def _pont_apres_case(case):
-        """Enfile les décisions du Travail, sans jamais faire échouer la route legacy."""
-        await _enfiler_pont([await _evenement_case(case)])
+        """Enfile les décisions du Travail, sans jamais faire échouer la route legacy.
+
+        Rend l'événement produit (``None`` quand le case est orphelin — ADR-0008 —
+        ou que la construction a échoué) : l'appelant sait alors que l'outbox C1
+        ne couvre pas cette décision et que le miroir direct reste le repli
+        (convergence §6 — un seul producteur).
+        """
+        evenement = await _evenement_case(case)
+        await _enfiler_pont([evenement])
+        return evenement
 
     async def jumeaux_autorises(espace):
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
@@ -1325,10 +1335,13 @@ def build_cases_router(deps):
             raise HTTPException(404, "Case introuvable")
         case_apres = await db.cases.find_one(
             {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID)
-        if case_apres:
-            await _pont_apres_case(case_apres)
+        evenement = await _pont_apres_case(case_apres) if case_apres else None
         await journaler(acteur, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
-        await _miroir_decision_canonique(case, dec)
+        if evenement is None:
+            # Un seul producteur (convergence §6) : l'outbox C1 porte la DECISION
+            # quand le case est lié ; le miroir direct ne subsiste que pour les
+            # cases sans Situation liée, que ADR-0008 exclut de l'outbox.
+            await _miroir_decision_canonique(case_apres or case, dec)
         return dec
 
     @router.get("/cases/{cid}/passation/brouillon")

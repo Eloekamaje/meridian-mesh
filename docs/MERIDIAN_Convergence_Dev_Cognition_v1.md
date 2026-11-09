@@ -23,10 +23,13 @@
 > `ctx["poids_signatures"]`, isolation try/except et rapport par sweep
 > conservés — migration 0009 index `attention`, migration 0010 index
 > `signature`/`sujet_detection`).
-> Reste différé : l'émission d'événement outbox signé par `decision_travail`
-> (§6 « un seul producteur » — `enregistrer_decision_travail` écrit encore via
-> `enregistrer_boucle` ; exige le format d'événement + replay idempotent du
-> pont C1) et la fusion du régime SCENARIO.
+> Reste différé : l'émission outbox de `decision_travail` est faite pour les
+> cases liés (§6 — `_pont_apres_case` rend l'événement produit ; le miroir
+> direct `_miroir_decision_canonique` n'écrit plus que pour les cases sans
+> Situation liée, qu'ADR-0008 exclut de l'outbox : lever cette exclusion reste
+> le chantier qui supprimera le second producteur) et la fusion du régime
+> SCENARIO (deux régimes d'écriture : `objets_exploitation` workflow vs boucle
+> canonique — analyse des deux validateurs requise).
 > **Périmètre :** l'arbre fusionné du commit `3c82f21` (branche `jumeau-p4-confort`),
 > qui contient côte à côte le modèle d'exploitation canonique (« monde dev », ~146
 > commits) et la couche épistémique du plan Cognition IA A→D (« monde cognition »,
