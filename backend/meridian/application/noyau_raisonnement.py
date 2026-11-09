@@ -226,7 +226,12 @@ def _niveau_demande(question: str, contexte: Mapping | None = None) -> tuple[str
         niveau = "N0"
         raisons = ["réponse directe sans enjeu détecté"]
 
-    if sensibilites and _ORDRES[niveau] < 3:
+    if sensibilites and _ORDRES[niveau] < 3 and but not in {"expliquer", "repondre"}:
+        # Le domaine sensible monte le niveau quand la réponse engage (décision,
+        # conception, action, diagnostic) — pas pour une explication : répondre
+        # « comment Paiements expose-t-il ses interfaces ? » n'a pas besoin de
+        # critères de succès pour être fondée. La sensibilité reste portée par
+        # `sensibilite` et les risques du cadre.
         niveau = "N3"
         raisons.append("domaine sensible détecté")
 
