@@ -27,9 +27,12 @@
 > cases liés (§6 — `_pont_apres_case` rend l'événement produit ; le miroir
 > direct `_miroir_decision_canonique` n'écrit plus que pour les cases sans
 > Situation liée, qu'ADR-0008 exclut de l'outbox : lever cette exclusion reste
-> le chantier qui supprimera le second producteur) et la fusion du régime
-> SCENARIO (deux régimes d'écriture : `objets_exploitation` workflow vs boucle
-> canonique — analyse des deux validateurs requise).
+> le chantier qui supprimera le second producteur). Le régime SCENARIO est
+> fusionné : `enregistrer_boucle` délègue la validation à
+> `objets_exploitation._valider_pour_persistance` (registre unique, `par_id`
+> préserve les liens intra-lot) et contrôle `STATUTS_SCENARIO` à l'écriture —
+> les deux chemins de persistance restent distincts par sémantique de lot, mais
+> un seul validateur fait foi.
 > **Périmètre :** l'arbre fusionné du commit `3c82f21` (branche `jumeau-p4-confort`),
 > qui contient côte à côte le modèle d'exploitation canonique (« monde dev », ~146
 > commits) et la couche épistémique du plan Cognition IA A→D (« monde cognition »,

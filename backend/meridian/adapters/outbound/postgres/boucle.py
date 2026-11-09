@@ -42,6 +42,7 @@ from meridian.domain.objets_exploitation import (
     Signal,
     STATUTS_OPPORTUNITE,
     STATUTS_RISQUE,
+    STATUTS_SCENARIO,
 )
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
@@ -1051,45 +1052,24 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
             champ, type_source = attendu
             _resoudre_source(conn, tenant, par_id, _valeur(objet, champ), champ, type_source)
         if type_objet == "SCENARIO":
-            investigation_id = _texte_ou_none(_valeur(objet, "investigation_id"))
-            decision_id = _texte_ou_none(_valeur(objet, "decision_id"))
-            if not investigation_id and not decision_id:
-                raise BoucleInvalide("un scénario exige investigation_id ou decision_id")
-            if investigation_id:
-                _resoudre_source(
-                    conn, tenant, par_id, investigation_id,
-                    "investigation_id", "INVESTIGATION")
-            decision_investigation = None
-            if decision_id:
-                decision = _resoudre_source(
-                    conn, tenant, par_id, decision_id, "decision_id", "DECISION")
-                decision_investigation = _lien_ou_alias(
-                    decision, "investigation_id", "investigation_ref")
-                if (
-                    investigation_id and decision_investigation
-                    and decision_investigation != investigation_id
-                ):
-                    raise BoucleInvalide(
-                        f"la décision {decision_id!r} appartient à l'investigation "
-                        f"{decision_investigation!r}, pas à {investigation_id!r}"
-                    )
-            investigation_reference = investigation_id or decision_investigation
-            for hypothesis_id in _liste_ids(
-                _valeur(objet, "hypothesis_ids"), "hypothesis_ids"
-            ):
-                hypothesis = _resoudre_source(
-                    conn, tenant, par_id, hypothesis_id,
-                    "hypothesis_ids", "HYPOTHESIS")
-                hypothesis_investigation = _texte_ou_none(
-                    _valeur(hypothesis, "investigation_id"))
-                if (
-                    investigation_reference and hypothesis_investigation
-                    and hypothesis_investigation != investigation_reference
-                ):
-                    raise BoucleInvalide(
-                        f"l'hypothèse {hypothesis_id!r} appartient à l'investigation "
-                        f"{hypothesis_investigation!r}, pas à {investigation_reference!r}"
-                    )
+            # Vocabulaire de statut unique : un statut hors STATUTS_SCENARIO
+            # gèle l'objet pour le moteur de transitions — autant le refuser à
+            # l'écriture que de le découvrir à la transition.
+            statut_scenario = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_scenario and statut_scenario not in STATUTS_SCENARIO:
+                raise BoucleInvalide(
+                    f"statut de SCENARIO inconnu : {statut_scenario!r}"
+                )
+            # Registre de validation unique (convergence §7 — fusion des
+            # régimes) : le scénario obéit au même validateur que le chemin
+            # d'exploitation — source investigation/décision, investigation de
+            # la décision cohérente, hypothèses rattachées à la bonne
+            # investigation. ``par_id`` préserve les liens intra-lot.
+            try:
+                objets_exploitation._valider_pour_persistance(
+                    conn, tenant, [objet], par_id=par_id)
+            except objets_exploitation.ObjetsExploitationInvalide as exc:
+                raise BoucleInvalide(str(exc)) from exc
         if type_objet == "DECISION" and est_decision_tranchee(objet):
             for champ in ("acteur", "choix", "decide_le"):
                 if not _valeur(objet, champ):
