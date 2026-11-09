@@ -45,6 +45,9 @@ Révisions :
 - `0009_attention_index` — index partiel `(tenant_id, type) WHERE donnees ? 'attention'` pour le fil
   d'attention unifié (convergence §5.5) : le store canonique `donnees.attention` reste lisible sans
   parcours jsonb complet.
+- `0010_detection_index` — index partiels sur `donnees->>'signature'` et `donnees->>'sujet_detection'`
+  (phase 5) : la déduplication des détecteurs (`detecteur_opportunites`, `detecteurs_besoins`)
+  reste un balayage d'index au lieu d'un filtre jsonb complet.
 
 ## Exécution en production
 

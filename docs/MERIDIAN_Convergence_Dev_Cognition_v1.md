@@ -18,10 +18,15 @@
 > canoniques, migration 0009 indexe le store ; `revue_graduee` étendue aux
 > propositions workflow — HYPOTHESIS/SCENARIO/EXPERT_CONTRIBUTION proposés,
 > classés et marqués sans toucher `mode`/`statut`). Les 8 collisions basculent
-> en XFAIL dans `test_collisions_monde`.
+> en XFAIL dans `test_collisions_monde` ; phase 5 faite (registre `SWEEPS`
+> ordonné `{nom, flag, fn}` dans `gardien.veiller` — dépendance 4→5 via
+> `ctx["poids_signatures"]`, isolation try/except et rapport par sweep
+> conservés — migration 0009 index `attention`, migration 0010 index
+> `signature`/`sujet_detection`).
 > Reste différé : l'émission d'événement outbox signé par `decision_travail`
-> (§6 « un seul producteur ») et la fusion du régime SCENARIO — la phase 5
-> (registre de sweeps du gardien, index restants) reste à faire.
+> (§6 « un seul producteur » — `enregistrer_decision_travail` écrit encore via
+> `enregistrer_boucle` ; exige le format d'événement + replay idempotent du
+> pont C1) et la fusion du régime SCENARIO.
 > **Périmètre :** l'arbre fusionné du commit `3c82f21` (branche `jumeau-p4-confort`),
 > qui contient côte à côte le modèle d'exploitation canonique (« monde dev », ~146
 > commits) et la couche épistémique du plan Cognition IA A→D (« monde cognition »,
